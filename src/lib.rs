@@ -53,14 +53,14 @@ pub fn translate(
         .text()?;
     let res = decode_result(res)?;
 
-    if let Some(result) = parse_result(res, &client) {
+    if let Some(result) = parse_result(&res, &client) {
         return Ok(result);
     } else {
-        return Err("Result parse error".into());
+        return Err(format!("Result parse error: {}", &res.to_string()).into());
     }
 }
 
-fn parse_result(res: Value, client: &Client) -> Option<Value> {
+fn parse_result(res: &Value, client: &Client) -> Option<Value> {
     if let Some(dict_result) = res.as_object()?.get("dictResult") {
         let dict_result = dict_result.as_object()?;
         if let Some(ec) = dict_result.get("ec") {
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn try_request() {
         let needs = HashMap::new();
-        let result = translate("hello world!", "auto", "zh-CHS", "ZH", needs).unwrap();
+        let result = translate("hello world!", "auto", "it", "ZH", needs).unwrap();
         println!("{result}");
     }
 }
