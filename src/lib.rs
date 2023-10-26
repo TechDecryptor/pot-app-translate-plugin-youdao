@@ -245,9 +245,8 @@ mod tests {
     use super::*;
     #[test]
     fn try_request() {
-        let mut needs = HashMap::new();
-        needs.insert("requestPath".to_string(), "lingva.pot-app.com".to_string());
-        let result = translate("The workflow is not valid. .github/workflows/build.yml (Line: 44, Col: 13): Unrecognized named-value: 'x86_64-pc-windows-msvc'. Located at position 18 within expression: matrix.target == x86_64-pc-windows-msvc .github/workflows/build.yml (Line: 47, Col: 13): Unrecognized named-value: 'i686-pc-windows-msvc'. Located at position 18 within expression: matrix.target == i686-pc-windows-msvc", "auto", "zh-CHS", "ZH", needs).unwrap();
+        let needs = HashMap::new();
+        let result = translate("hello world!", "auto", "zh-CHS", "ZH", needs).unwrap();
         println!("{result}");
     }
 }
