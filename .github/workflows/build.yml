@@ -40,15 +40,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
-      - name: Install OpenSSL
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: vcpkg install openssl
-      - name: Install OpenSSL
-        if: matrix.target == 'i686-pc-windows-msvc'
-        run: vcpkg install openssl:x86-windows
-      - name: Install OpenSSL
-        if: matrix.target == 'aarch64-pc-windows-msvc'
-        run: vcpkg install openssl:arm64-windows
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
       - name: install toolchain
@@ -107,15 +98,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
-      - name: Install OpenSSL
-        if: matrix.target == 'aarch64-apple-darwin'
-        run: |
-          wget https://github.com/openssl/openssl/releases/download/openssl-3.1.4/openssl-3.1.4.tar.gz
-          tar -zxvf ./openssl-3.1.4.tar.gz
-          cd openssl-3.1.4
-          ./Configure darwin64-arm64-cc --prefix="/tmp/openssl-arm64" no-asm
-          make
-          make install
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
       - name: install toolchain
