@@ -61,120 +61,121 @@ pub fn translate(
 }
 
 fn parse_result(res: Value, client: &Client) -> Option<Value> {
-    let dict_result = res.as_object()?.get("dictResult")?.as_object()?;
-    if let Some(ec) = dict_result.get("ec") {
-        let ec = ec.as_object()?;
+    if let Some(dict_result) = res.as_object()?.get("dictResult") {
+        let dict_result = dict_result.as_object()?;
+        if let Some(ec) = dict_result.get("ec") {
+            let ec = ec.as_object()?;
 
-        let mut pronunciations: Vec<Value> = Vec::new();
-        let mut explanations: Vec<Value> = Vec::new();
-        let mut associations: Vec<String> = Vec::new();
+            let mut pronunciations: Vec<Value> = Vec::new();
+            let mut explanations: Vec<Value> = Vec::new();
+            let mut associations: Vec<String> = Vec::new();
 
-        if let Some(word) = ec.get("word") {
-            let word = word.as_object()?;
-            // 变形
-            if let Some(wfs) = word.get("wfs") {
-                let wfs = wfs.as_array()?;
-                for wf in wfs {
-                    let wf = wf.as_object()?.get("wf")?.as_object()?;
-                    let name = wf.get("name")?.as_str()?;
-                    let value = wf.get("value")?.as_str()?;
-                    associations.push(format!("{}: {}", name, value));
+            if let Some(word) = ec.get("word") {
+                let word = word.as_object()?;
+                // 变形
+                if let Some(wfs) = word.get("wfs") {
+                    let wfs = wfs.as_array()?;
+                    for wf in wfs {
+                        let wf = wf.as_object()?.get("wf")?.as_object()?;
+                        let name = wf.get("name")?.as_str()?;
+                        let value = wf.get("value")?.as_str()?;
+                        associations.push(format!("{}: {}", name, value));
+                    }
+                }
+                // 发音
+                if let Some(usphone) = word.get("usphone") {
+                    let usphone = usphone.as_str()?;
+                    let usspeech = word.get("usspeech")?.as_str()?;
+                    if let Ok(voice_res) = client
+                        .get(format!(
+                            "https://dict.youdao.com/dictvoice?audio={usspeech}"
+                        ))
+                        .send()
+                    {
+                        let voice_res = voice_res.bytes().unwrap();
+                        pronunciations.push(json!({
+                            "region": "US",
+                            "symbol": format!("/{}/",usphone),
+                            "voice": voice_res.to_vec()
+                        }));
+                    } else {
+                        pronunciations.push(json!({
+                            "region": "US",
+                            "symbol": format!("/{}/",usphone)
+                        }));
+                    }
+                }
+                if let Some(ukphone) = word.get("ukphone") {
+                    let ukphone = ukphone.as_str()?;
+                    let ukspeech = word.get("ukspeech")?.as_str()?;
+                    if let Ok(voice_res) = client
+                        .get(format!(
+                            "https://dict.youdao.com/dictvoice?audio={ukspeech}"
+                        ))
+                        .send()
+                    {
+                        let voice_res = voice_res.bytes().unwrap();
+                        pronunciations.push(json!({
+                            "region": "UK",
+                            "symbol": format!("/{}/",ukphone),
+                            "voice": voice_res.to_vec()
+                        }));
+                    } else {
+                        pronunciations.push(json!({
+                            "region": "UK",
+                            "symbol": format!("/{}/",ukphone)
+                        }));
+                    }
+                }
+                if let Some(trs) = word.get("trs") {
+                    let trs = trs.as_array()?;
+                    for i in trs {
+                        let tr = i.as_object()?;
+                        let pos = match tr.get("pos") {
+                            Some(pos) => pos.as_str()?,
+                            None => "",
+                        };
+                        let tran = tr.get("tran")?.as_str()?;
+                        let tran: Vec<&str> = tran.split("；").collect();
+                        explanations.push(json!({
+                            "trait": pos,
+                            "explains": tran
+                        }))
+                    }
                 }
             }
-            // 发音
-            if let Some(usphone) = word.get("usphone") {
-                let usphone = usphone.as_str()?;
-                let usspeech = word.get("usspeech")?.as_str()?;
-                if let Ok(voice_res) = client
-                    .get(format!(
-                        "https://dict.youdao.com/dictvoice?audio={usspeech}"
-                    ))
-                    .send()
-                {
-                    let voice_res = voice_res.bytes().unwrap();
-                    pronunciations.push(json!({
-                        "region": "US",
-                        "symbol": format!("/{}/",usphone),
-                        "voice": voice_res.to_vec()
-                    }));
-                } else {
-                    pronunciations.push(json!({
-                        "region": "US",
-                        "symbol": format!("/{}/",usphone)
-                    }));
+            // 单词类型
+            let mut exam_type_str = String::new();
+            if let Some(exam_type) = ec.get("exam_type") {
+                let exam_type = exam_type.as_array()?;
+                for i in exam_type {
+                    exam_type_str.push_str(i.as_str()?);
+                    exam_type_str.push_str(" ");
                 }
             }
-            if let Some(ukphone) = word.get("ukphone") {
-                let ukphone = ukphone.as_str()?;
-                let ukspeech = word.get("ukspeech")?.as_str()?;
-                if let Ok(voice_res) = client
-                    .get(format!(
-                        "https://dict.youdao.com/dictvoice?audio={ukspeech}"
-                    ))
-                    .send()
-                {
-                    let voice_res = voice_res.bytes().unwrap();
-                    pronunciations.push(json!({
-                        "region": "UK",
-                        "symbol": format!("/{}/",ukphone),
-                        "voice": voice_res.to_vec()
-                    }));
-                } else {
-                    pronunciations.push(json!({
-                        "region": "UK",
-                        "symbol": format!("/{}/",ukphone)
-                    }));
-                }
-            }
-            if let Some(trs) = word.get("trs") {
-                let trs = trs.as_array()?;
-                for i in trs {
-                    let tr = i.as_object()?;
-                    let pos = match tr.get("pos") {
-                        Some(pos) => pos.as_str()?,
-                        None => "",
-                    };
-                    let tran = tr.get("tran")?.as_str()?;
-                    let tran: Vec<&str> = tran.split("；").collect();
-                    explanations.push(json!({
-                        "trait": pos,
-                        "explains": tran
-                    }))
-                }
-            }
+            associations.push("".to_string());
+            associations.push(exam_type_str.trim().to_string());
+            return Some(json!({
+                "pronunciations": pronunciations,
+                "explanations": explanations,
+                "associations": associations
+            }));
         }
-        // 单词类型
-        let mut exam_type_str = String::new();
-        if let Some(exam_type) = ec.get("exam_type") {
-            let exam_type = exam_type.as_array()?;
-            for i in exam_type {
-                exam_type_str.push_str(i.as_str()?);
-                exam_type_str.push_str(" ");
-            }
-        }
-        associations.push("".to_string());
-        associations.push(exam_type_str.trim().to_string());
-        return Some(json!({
-            "pronunciations": pronunciations,
-            "explanations": explanations,
-            "associations": associations
-        }));
-    } else {
-        let mut result = String::new();
-        let translate_result = res.as_object()?.get("translateResult")?.as_array()?;
-
-        for line in translate_result {
-            let tgt = line
-                .as_array()?
-                .get(0)?
-                .as_object()?
-                .get("tgt")?
-                .as_str()?
-                .to_string();
-            result.push_str(&tgt);
-        }
-        return Some(Value::String(result));
     }
+    let mut result = String::new();
+    let translate_result = res.as_object()?.get("translateResult")?.as_array()?;
+
+    for line in translate_result {
+        let tgt = line
+            .as_array()?
+            .get(0)?
+            .as_object()?
+            .get("tgt")?
+            .as_str()?
+            .to_string();
+        result.push_str(&tgt);
+    }
+    return Some(Value::String(result));
 }
 
 fn decode_result(res: String) -> Result<Value, Box<dyn Error>> {
@@ -244,8 +245,9 @@ mod tests {
     use super::*;
     #[test]
     fn try_request() {
-        let needs = HashMap::new();
-        let result = translate("hello world", "auto", "zh-CHS", "en", needs).unwrap();
+        let mut needs = HashMap::new();
+        needs.insert("requestPath".to_string(), "lingva.pot-app.com".to_string());
+        let result = translate("The workflow is not valid. .github/workflows/build.yml (Line: 44, Col: 13): Unrecognized named-value: 'x86_64-pc-windows-msvc'. Located at position 18 within expression: matrix.target == x86_64-pc-windows-msvc .github/workflows/build.yml (Line: 47, Col: 13): Unrecognized named-value: 'i686-pc-windows-msvc'. Located at position 18 within expression: matrix.target == i686-pc-windows-msvc", "auto", "zh-CHS", "ZH", needs).unwrap();
         println!("{result}");
     }
 }
