@@ -41,7 +41,14 @@ jobs:
         with:
           fetch-depth: 1
       - name: Install OpenSSL
+        if: matrix.platform == "x86_64-pc-windows-msvc"
         run: vcpkg install openssl
+      - name: Install OpenSSL
+        if: matrix.platform == "i686-pc-windows-msvc"
+        run: vcpkg install openssl:x86-windows
+      - name: Install OpenSSL
+        if: matrix.platform == "aarch64-pc-windows-msvc"
+        run: vcpkg install openssl:arm64-windows
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
       - name: install toolchain
@@ -49,6 +56,16 @@ jobs:
           rustup target add ${{ matrix.target }}
           rustup toolchain install --force-non-host stable-${{ matrix.target }}
       - name: Build
+        if: matrix.platform == "x86_64-pc-windows-msvc"
+        env: OPENSSL_DIR: "C:/vcpkg/packages/openssl_x64-windows"
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        if: matrix.platform == "i686-pc-windows-msvc"
+        env: OPENSSL_DIR: "C:/vcpkg/packages/openssl_x86-windows"
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        if: matrix.platform == "aarch64-pc-windows-msvc"
+        env: OPENSSL_DIR: "C:/vcpkg/packages/openssl_arm64-windows"
         run: cargo build --release --target ${{ matrix.target }}
       - name: Rename
         run: move target/${{ matrix.target }}/release/plugin.dll ./plugin.dll
@@ -88,7 +105,14 @@ jobs:
         with:
           fetch-depth: 1
       - name: Install OpenSSL
-        run: brew install openssl@3
+        if: matrix.platform == "aarch64-apple-darwin"
+        run: |
+          wget https://github.com/openssl/openssl/releases/download/openssl-3.1.4/openssl-3.1.4.tar.gz
+          tar -zcf openssl-3.1.4.tar.gz
+          cd openssl-3.1.4
+          ./Configure darwin64-arm64-cc --prefix="/tmp/openssl-arm64" no-asm
+          make
+          make install
       - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
       - name: install toolchain
@@ -96,6 +120,11 @@ jobs:
           rustup target add ${{ matrix.target }}
           rustup toolchain install --force-non-host stable-${{ matrix.target }}
       - name: Build
+        if: matrix.platform == "aarch64-apple-darwin"
+        env: OPENSSL_DIR: "/tmp/openssl-arm64"
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        if: matrix.platform == "x86_64-apple-darwin"
         run: cargo build --release --target ${{ matrix.target }}
       - name: Rename
         run: sudo mv target/${{ matrix.target }}/release/libplugin.dylib ./plugin.dylib
