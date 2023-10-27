@@ -165,15 +165,12 @@ fn parse_result(res: &Value, client: &Client) -> Option<Value> {
     let mut result = String::new();
     let translate_result = res.as_object()?.get("translateResult")?.as_array()?;
 
-    for line in translate_result {
-        let tgt = line
-            .as_array()?
-            .get(0)?
-            .as_object()?
-            .get("tgt")?
-            .as_str()?
-            .to_string();
-        result.push_str(&tgt);
+    for p in translate_result {
+        let p = p.as_array()?;
+        for l in p {
+            let tgt = l.as_object()?.get("tgt")?.as_str()?.to_string();
+            result.push_str(&tgt);
+        }
     }
     return Some(Value::String(result));
 }
