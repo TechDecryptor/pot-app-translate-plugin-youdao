@@ -1,9 +1,15 @@
+use aes::cipher::{BlockDecryptMut, KeyIvInit};
+use base64::prelude::{Engine as _, BASE64_URL_SAFE};
+use cbc::cipher::block_padding::Pkcs7;
+use md5::{Digest, Md5};
 use rand::{thread_rng, Rng};
-use reqwest::blocking::Client;
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{self, HeaderMap, HeaderValue};
+use serde_json;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::error::Error;
+
+type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 #[no_mangle]
 pub fn translate(
@@ -14,15 +20,18 @@ pub fn translate(
     _needs: HashMap<String, String>,
 ) -> Result<Value, Box<dyn Error>> {
     let mut default_headers = HeaderMap::new();
-    default_headers.insert("user-agent", HeaderValue::from_static("Mozilla/5.0 (Windows NT 6.2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/28.0.1464.0 Safari/537.36"));
-    default_headers.insert("host", HeaderValue::from_str("dict.youdao.com")?);
-    default_headers.insert("origin", HeaderValue::from_str("https://fanyi.youdao.com")?);
+    default_headers.insert(header::USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 6.2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/28.0.1464.0 Safari/537.36"));
+    default_headers.insert(header::HOST, HeaderValue::from_static("dict.youdao.com"));
     default_headers.insert(
-        "referer",
-        HeaderValue::from_str("https://fanyi.youdao.com/")?,
+        header::ORIGIN,
+        HeaderValue::from_static("https://fanyi.youdao.com"),
     );
     default_headers.insert(
-        "Cookie",
+        header::REFERER,
+        HeaderValue::from_static("https://fanyi.youdao.com/"),
+    );
+    default_headers.insert(
+        header::COOKIE,
         HeaderValue::from_str(&format!(
             "OUTFOX_SEARCH_USER_ID={}; OUTFOX_SEARCH_USER_ID_NCOO={}",
             format!(
@@ -43,162 +52,71 @@ pub fn translate(
     let client = reqwest::blocking::ClientBuilder::new()
         .default_headers(default_headers)
         .build()?;
-    let key = get_key(&client)?;
-    let data = base_body(text, from, to, key);
+
+    let data = base_body(text, from, to);
     let res = client
         .post("https://dict.youdao.com/webtranslate")
         .header("content-type", "application/x-www-form-urlencoded")
         .form(&data)
         .send()?
         .text()?;
+
     let res = decode_result(res)?;
 
-    if let Some(result) = parse_result(&res, &client) {
-        return Ok(result);
-    } else {
-        return Err(format!("Result parse error: {}", &res.to_string()).into());
-    }
-}
+    let res = res.as_object().ok_or("Result is not an object")?;
 
-fn parse_result(res: &Value, client: &Client) -> Option<Value> {
-    if let Some(dict_result) = res.as_object()?.get("dictResult") {
-        let dict_result = dict_result.as_object()?;
-        if let Some(ec) = dict_result.get("ec") {
-            let ec = ec.as_object()?;
-
-            let mut pronunciations: Vec<Value> = Vec::new();
-            let mut explanations: Vec<Value> = Vec::new();
-            let mut associations: Vec<String> = Vec::new();
-
-            if let Some(word) = ec.get("word") {
-                let word = word.as_object()?;
-                // 变形
-                if let Some(wfs) = word.get("wfs") {
-                    let wfs = wfs.as_array()?;
-                    for wf in wfs {
-                        let wf = wf.as_object()?.get("wf")?.as_object()?;
-                        let name = wf.get("name")?.as_str()?;
-                        let value = wf.get("value")?.as_str()?;
-                        associations.push(format!("{}: {}", name, value));
-                    }
-                }
-                // 发音
-                if let Some(usphone) = word.get("usphone") {
-                    let usphone = usphone.as_str()?;
-                    let usspeech = word.get("usspeech")?.as_str()?;
-                    if let Ok(voice_res) = client
-                        .get(format!(
-                            "https://dict.youdao.com/dictvoice?audio={usspeech}"
-                        ))
-                        .send()
-                    {
-                        let voice_res = voice_res.bytes().unwrap();
-                        pronunciations.push(json!({
-                            "region": "US",
-                            "symbol": format!("/{}/",usphone),
-                            "voice": voice_res.to_vec()
-                        }));
-                    } else {
-                        pronunciations.push(json!({
-                            "region": "US",
-                            "symbol": format!("/{}/",usphone)
-                        }));
-                    }
-                }
-                if let Some(ukphone) = word.get("ukphone") {
-                    let ukphone = ukphone.as_str()?;
-                    let ukspeech = word.get("ukspeech")?.as_str()?;
-                    if let Ok(voice_res) = client
-                        .get(format!(
-                            "https://dict.youdao.com/dictvoice?audio={ukspeech}"
-                        ))
-                        .send()
-                    {
-                        let voice_res = voice_res.bytes().unwrap();
-                        pronunciations.push(json!({
-                            "region": "UK",
-                            "symbol": format!("/{}/",ukphone),
-                            "voice": voice_res.to_vec()
-                        }));
-                    } else {
-                        pronunciations.push(json!({
-                            "region": "UK",
-                            "symbol": format!("/{}/",ukphone)
-                        }));
-                    }
-                }
-                if let Some(trs) = word.get("trs") {
-                    let trs = trs.as_array()?;
-                    for i in trs {
-                        let tr = i.as_object()?;
-                        let pos = match tr.get("pos") {
-                            Some(pos) => pos.as_str()?,
-                            None => "",
-                        };
-                        let tran = tr.get("tran")?.as_str()?;
-                        let tran: Vec<&str> = tran.split("；").collect();
-                        explanations.push(json!({
-                            "trait": pos,
-                            "explains": tran
-                        }))
-                    }
-                }
-            }
-            // 单词类型
-            let mut exam_type_str = String::new();
-            if let Some(exam_type) = ec.get("exam_type") {
-                let exam_type = exam_type.as_array()?;
-                for i in exam_type {
-                    exam_type_str.push_str(i.as_str()?);
-                    exam_type_str.push_str(" ");
-                }
-            }
-            associations.push("".to_string());
-            associations.push(exam_type_str.trim().to_string());
-            return Some(json!({
-                "pronunciations": pronunciations,
-                "explanations": explanations,
-                "associations": associations
-            }));
-        }
-    }
     let mut result = String::new();
-    let translate_result = res.as_object()?.get("translateResult")?.as_array()?;
+    let translate_result = res.get("translateResult").ok_or("No translateResult")?;
+    let translate_result = translate_result
+        .as_array()
+        .ok_or("translateResult is not an array")?;
 
     for p in translate_result {
-        let p = p.as_array()?;
+        let p = p.as_array().ok_or("translateResult item is not an array")?;
         for l in p {
-            let tgt = l.as_object()?.get("tgt")?.as_str()?.to_string();
-            result.push_str(&tgt);
+            let tgt = l
+                .as_object()
+                .ok_or("translateResult item is not an object")?;
+            let tgt = tgt.get("tgt").ok_or("No tgt")?;
+            let tgt = tgt.as_str().ok_or("tgt is not a string")?;
+
+            result.push_str(tgt);
         }
     }
-    return Some(Value::String(result));
+    Ok(Value::String(result))
 }
 
 fn decode_result(res: String) -> Result<Value, Box<dyn Error>> {
-    use base64::prelude::{Engine as _, BASE64_URL_SAFE};
-    use openssl::hash::hash;
-    use openssl::hash::MessageDigest;
-    use openssl::symm::{Cipher, Crypter, Mode};
-    let key = hash(
-        MessageDigest::md5(),
+    let mut key_hasher = Md5::new();
+    key_hasher.update(
         b"ydsecret://query/key/B*RGygVywfNBwpmBaZg*WT7SIOUP2T0C9WHMZN39j^DAdaZhAnxvGcCY6VYFwnHl",
-    )?;
-    let iv = hash(
-        MessageDigest::md5(),
+    );
+    let key = key_hasher.finalize();
+
+    let mut iv_hasher = Md5::new();
+    iv_hasher.update(
         b"ydsecret://query/iv/C@lZe2YzHtZ2CYgaXKSVfsb7Y4QWHjITPPZ0nQp87fBeJ!Iv6v^6fvi2WN@bYpJ4",
-    )?;
+    );
+    let iv = iv_hasher.finalize();
 
-    let mut c = Crypter::new(Cipher::aes_128_cbc(), Mode::Decrypt, &key, Some(&iv))?;
-    let ciphertext = BASE64_URL_SAFE.decode(res)?;
+    // 只使用前 16 个字节（128 位）作为 AES 密钥和 IV
+    let key = &key[..16];
+    let iv = &iv[..16];
 
-    let mut decrypted = vec![0; ciphertext.len() + Cipher::aes_128_cbc().block_size()];
-    let count = c.update(&ciphertext, &mut decrypted)?;
-    let rest = c.finalize(&mut decrypted[count..])?;
-    decrypted.truncate(count + rest);
+    let mut ciphertext = BASE64_URL_SAFE.decode(res)?;
+    // 创建 AES 解密器
+    let decryptor = Aes128CbcDec::new_from_slices(key, iv).unwrap();
 
-    let decrypted_str = std::str::from_utf8(&decrypted)?;
-    println!("{}", decrypted_str);
+    // 解密
+    let decrypted: &mut [u8] = &mut ciphertext;
+    // let mut decrypted: &mut [u8] = ciphertext.clone();
+    let len = decryptor
+        .decrypt_padded_mut::<Pkcs7>(decrypted)
+        .unwrap()
+        .len();
+
+    let decrypted_str = std::str::from_utf8(&decrypted[..len])?;
+    // return Ok(Value::String(decrypted_str.to_string()));
     Ok(serde_json::from_str(decrypted_str)?)
 }
 
@@ -213,7 +131,7 @@ fn sign(t: i64, key: String) -> String {
     encode(result)
 }
 
-fn base_body(text: &str, from: &str, to: &str, key: String) -> Value {
+fn base_body(text: &str, from: &str, to: &str) -> Value {
     use chrono::prelude::*;
     let t = Utc::now().timestamp_millis();
     json!({
@@ -222,7 +140,7 @@ fn base_body(text: &str, from: &str, to: &str, key: String) -> Value {
         "to":to,
         "dictResult":true,
         "keyid":"webfanyi",
-        "sign": sign(t, key),
+        "sign": sign(t, "fsdsogkndfokasodnaso".to_string()),
         "client": "fanyideskweb",
         "product": "webfanyi",
         "appVersion": "1.0.0",
@@ -233,17 +151,13 @@ fn base_body(text: &str, from: &str, to: &str, key: String) -> Value {
     })
 }
 
-fn get_key(_client: &Client) -> Result<String, Box<dyn Error>> {
-    Ok("fsdsogkndfokasodnaso".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn try_request() {
         let needs = HashMap::new();
-        let result = translate("hello world!", "auto", "it", "ZH", needs).unwrap();
-        println!("{result}");
+        let result = translate("hello world!", "auto", "it", "ZH", needs);
+        println!("{result:?}");
     }
 }
