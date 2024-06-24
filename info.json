@@ -1,5 +1,5 @@
 {
-  "id": "[plugin].com.TechDecryptor.youdao",
+  "id": "plugin.com.TechDecryptor.youdao",
   "plugin_type": "translate",
   "icon": "youdao.svg",
   "display": "有道翻译",
