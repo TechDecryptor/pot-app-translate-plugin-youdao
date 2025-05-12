@@ -12,7 +12,7 @@ async function translate(text, from, to, options) {
     form.append("to", to);
     form.append("dictResult", true);
     form.append("keyid", "webfanyi");
-    form.append("sign", CryptoJS.MD5(`client=fanyideskweb&mysticTime=${mysticTime}&product=webfanyi&key=fsdsogkndfokasodnaso`).toString(CryptoJS.enc.Hex));
+    form.append("sign", CryptoJS.MD5(`client=fanyideskweb&mysticTime=${mysticTime}&product=webfanyi&key=Vy4EQ1uwPkUoqvcP1nIu6WiAjxFeA3Y3`).toString(CryptoJS.enc.Hex));
     form.append("client", "fanyideskweb");
     form.append("product", "webfanyi");
     form.append("appVersion", "1.0.0");
